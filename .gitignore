@@ -36,8 +36,8 @@ desktop.ini
 *.mov
 *.jpg
 *.png
-!modules/content/**/*.jpg
-!modules/content/**/*.png
+!modules/models/**/*.jpg
+!modules/models/**/*.png
 *.tmp
 *.log
 *.cache
