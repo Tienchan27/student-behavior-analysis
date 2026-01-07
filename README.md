@@ -6,10 +6,24 @@
 
 ### Yêu cầu hệ thống
 
-- Python 3.8 trở lên
+- Python 3
 - Webcam (cho chức năng live camera)
 
 ### Cài đặt dependencies
+
+**Khuyến nghị sử dụng virtual environment:**
+
+```bash
+# Tạo virtual environment
+python -m venv venv
+
+# Kích hoạt virtual environment
+.\venv\Scripts\activate
+
+# Cài đặt dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
 ```bash
 pip install -r requirements.txt
@@ -49,7 +63,7 @@ python run_live_camera.py
 
 ## Models
 
-Hệ thống sử dụng 3 models YOLO chạy song song để phát hiện các hành vi:
+Hệ thống sử dụng 3 models YOLO12s chạy song song để phát hiện các hành vi:
 
 1. **hand-raise_read_write_model**: Phát hiện 3 hành vi
    - Hand-raising (giơ tay)
@@ -60,23 +74,28 @@ Hệ thống sử dụng 3 models YOLO chạy song song để phát hiện các 
 
 3. **stand_model**: Phát hiện hành vi Stand (đứng)
 
+**Architecture**: Tất cả models sử dụng YOLO12s (YOLO version 12, small variant) - phiên bản nhẹ và nhanh, phù hợp cho real-time detection.
+
 Models được tự động load từ:
 - `modules/models/student_behavior/hand-raise_read_write_model/weights/best.pt`
 - `modules/models/student_behavior/talk_model/weights/best.pt`
 - `modules/models/student_behavior/stand_model/weights/best.pt`
 
+
 ## Cấu hình
 
 Tất cả cấu hình nằm trong file `modules/core/config.py`:
 
-- **Frame Skip**: 10 (chỉ xử lý mỗi 10 frame để tối ưu hiệu suất)
-- **Model Image Size**: 320px
+- **Frame Skip**: 
+  - FRAME_SKIP = 5 (cho video file, xử lý mỗi 5 frame)
+  - FRAME_SKIP_CAMERA = 10 (cho live camera, xử lý mỗi 10 frame)
+- **Model Image Size**: 416px
 - **Confidence Threshold**: 0.5
 - **IOU Threshold**: 0.45 (cho NMS)
-- **Max Detections**: 6 (giới hạn số detection mỗi frame)
+- **Max Detections**: 20 
 - **Camera Resolution**: 640x480
 - **Video Codec**: avc1 (H.264) với fallback sang mp4v
-- **Use Threading**: True (xử lý prediction song song)
+- **Use Threading**: True
 
 ## Cấu trúc thư mục
 
@@ -116,9 +135,12 @@ Các hành vi được hiển thị với màu sắc khác nhau:
 ## Cách hoạt động
 
 1. **Multi-model Inference**: Hệ thống chạy 3 models song song, mỗi model phát hiện các hành vi khác nhau
-2. **Cross-model NMS**: Áp dụng Non-Maximum Suppression giữa các models để loại bỏ detections trùng lặp
-3. **Threading**: Sử dụng threading để xử lý prediction không block việc đọc frame
-4. **Frame Skipping**: Chỉ xử lý mỗi 10 frame để tối ưu hiệu suất cho real-time
+2. **Cross-model NMS**: Áp dụng Non-Maximum Suppression giữa các models để loại bỏ detections trùng lặp dựa trên IoU threshold
+3. **Threading**: Sử dụng threading với queue (maxsize=5) để xử lý prediction không block việc đọc frame, đảm bảo prediction được cập nhật đúng cách
+4. **Frame Skipping**: 
+   - Video file: Xử lý mỗi 5 frame (FRAME_SKIP=5) để cân bằng tốc độ và độ chính xác
+   - Live camera: Xử lý mỗi 10 frame (FRAME_SKIP_CAMERA=10) để đảm bảo real-time performance
+5. **Result Merging**: Kết quả từ tất cả models được merge, filter theo confidence threshold, áp dụng NMS, và giới hạn số lượng detections
 
 ## Lưu ý
 
