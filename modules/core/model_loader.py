@@ -1,12 +1,11 @@
 import os
-from typing import Dict, Optional, Any
+from typing import Dict, Any
 from ultralytics import YOLO
 
-# Đường dẫn các models
 MODEL_PATHS = {
     'hand_raise_read_write': 'modules/models/student_behavior/hand-raise_read_write_model/weights/best.pt',
-    'talk': 'modules/models/student_behavior/talk_model/runs/detect/train/weights/best.pt',
-    'stand': 'modules/models/student_behavior/stand_model/runs/detect/train/weights/best.pt'
+    'talk': 'modules/models/student_behavior/talk_model/weights/best.pt',
+    'stand': 'modules/models/student_behavior/stand_model/weights/best.pt'
 }
 
 
@@ -29,7 +28,6 @@ def load_all_models() -> Dict[str, Any]:
             print(f"Lỗi khi tải {model_name} model: {e}")
             models[model_name] = None
     
-    # Kiểm tra xem có ít nhất 1 model được load không
     loaded_models = [name for name, model in models.items() if model is not None]
     if not loaded_models:
         print("\nKhông có model nào được load thành công!")

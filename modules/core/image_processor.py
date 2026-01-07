@@ -4,7 +4,6 @@ from modules.core.config import MAX_DISPLAY_SIZE
 from modules.core.detection_utils import draw_multiple_detections
 
 
-# Xử lý ảnh tĩnh
 def process_image(multi_model_processor, file_path):
     frame = cv2.imread(file_path)
     
@@ -12,7 +11,6 @@ def process_image(multi_model_processor, file_path):
         print(f"Không thể đọc ảnh: {file_path}")
         return None
     
-    # Resize ảnh nếu quá lớn
     height, width = frame.shape[:2]
     if width > MAX_DISPLAY_SIZE or height > MAX_DISPLAY_SIZE:
         scale = MAX_DISPLAY_SIZE / max(width, height)
@@ -20,21 +18,15 @@ def process_image(multi_model_processor, file_path):
         new_height = int(height * scale)
         frame = cv2.resize(frame, (new_width, new_height))
     
-    # Xử lý prediction với tất cả models
     print("Đang phân tích ảnh với tất cả models...")
     multi_model_processor.predict_frame(frame)
-    
-    # Lấy kết quả từ tất cả models
     all_results = multi_model_processor.get_all_results()
-    
-    # Vẽ detections từ tất cả models
     display_frame = draw_multiple_detections(frame.copy(), all_results)
     
     return frame, display_frame
 
 
 def show_image(display_frame, file_path, window_name='Student Behavior Detector - Image'):
-    # Hiển thị thông tin
     info_text = f"Image: {os.path.basename(file_path)} | Press 'q' to quit, 'u' to upload new"
     cv2.putText(
         display_frame,

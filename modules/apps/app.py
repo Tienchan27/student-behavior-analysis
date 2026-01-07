@@ -8,91 +8,64 @@ from modules.core.model_loader import load_all_models
 from modules.core.detection_utils import draw_multiple_detections, MultiModelProcessor
 from modules.core.image_processor import process_image
 from modules.core.video_processor import VideoProcessor
-from modules.core.config import CONF_THRESHOLD, MODEL_IMG_SIZE, CAMERA_WIDTH, CAMERA_HEIGHT, FRAME_SKIP
+from modules.core.config import FRAME_SKIP
 
-# Tải tất cả models khi khởi động
 print("Đang tải tất cả models...")
 all_models = load_all_models()
 if not all_models or all(model is None for model in all_models.values()):
     raise RuntimeError("Không thể tải models. Vui lòng kiểm tra đường dẫn models.")
 
-# Khởi tạo multi-model prediction processor
 prediction_processor = MultiModelProcessor(all_models)
-
-# Biến toàn cục để lưu kết quả video
 last_video_output = None
 
 
 def process_image_ui(image_path, auto_process=False):
-    """
-    Xử lý ảnh và trả về kết quả cho Gradio
-    
-    Args:
-        image_path: Đường dẫn đến file ảnh hoặc numpy array
-        auto_process: Tự động xử lý khi upload
-    
-    Returns:
-        numpy array của ảnh đã được xử lý (RGB format)
-    """
     if image_path is None:
         return None
     
-    # Xử lý nếu là file path
     if isinstance(image_path, str):
         result = process_image(prediction_processor, image_path)
         if result is None:
             return None
         frame, display_frame = result
     else:
-        # Nếu là numpy array từ Gradio
         frame = cv2.cvtColor(image_path, cv2.COLOR_RGB2BGR)
-        # Predict với tất cả models
         prediction_processor.predict_frame(frame)
         all_results = prediction_processor.get_all_results()
         display_frame = draw_multiple_detections(frame.copy(), all_results)
     
-    # Chuyển từ BGR sang RGB cho Gradio
     return cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
 
-# Xử lý video và trả về video đã được xử lý
 def process_video_ui(video_path, save_video=False):
     global last_video_output
     
     if video_path is None:
         return None, "Vui lòng upload video"
     
-    # Xử lý nếu là file path
     if isinstance(video_path, str):
         input_path = video_path
     else:
-        # Nếu là dict từ Gradio
         input_path = video_path if isinstance(video_path, str) else video_path.name
     
-    # Sử dụng VideoProcessor với PredictionProcessor
     video_processor = VideoProcessor(prediction_processor)
     
-    # Mở video
     if not video_processor.open_video(input_path):
         return None, f"Không thể mở video: {input_path}"
     
-    # Lấy thông tin video
     fps = video_processor.cap.get(cv2.CAP_PROP_FPS)
     width = int(video_processor.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(video_processor.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(video_processor.cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
-    # Chỉ tạo VideoWriter nếu cần lưu video
     output_path = None
     if save_video:
         base_name = os.path.splitext(os.path.basename(input_path))[0]
         output_path = f"{base_name}_processed.mp4"
         
-        # Dùng H.264 codec để tương thích browser
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
         video_processor.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         
         if not video_processor.video_writer.isOpened():
-            # Fallback sang mp4v nếu avc1 không được hỗ trợ
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_processor.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
             
@@ -100,50 +73,39 @@ def process_video_ui(video_path, save_video=False):
             video_processor.release()
             return None, "Không thể tạo file video output"
     else:
-        # Không lưu video, chỉ tạo file tạm để hiển thị
         base_name = os.path.splitext(os.path.basename(input_path))[0]
         output_path = os.path.join(tempfile.gettempdir(), f'{base_name}_processed.mp4')
         
-        # Dùng H.264 codec để tương thích browser
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
         video_processor.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
         
         if not video_processor.video_writer.isOpened():
-            # Fallback sang mp4v nếu avc1 không được hỗ trợ
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_processor.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     
     print(f"Đang xử lý video: {os.path.basename(input_path)}")
     
-    # Xử lý video sử dụng logic tối ưu từ VideoProcessor
     while True:
         frame, ret = video_processor.read_frame()
         if not ret:
             break
         
-        # Xử lý prediction (chỉ mỗi FRAME_SKIP frame)
         if video_processor.frame_count % FRAME_SKIP == 0:
-            video_processor.prediction_processor.predict_frame(frame)
+            video_processor.prediction_processor.predict_frame(frame, wait=True)
         
-        # Copy frame để vẽ
-        display_frame = frame.copy()
-        
-        # Vẽ detections từ kết quả mới nhất của tất cả models
         all_results = video_processor.prediction_processor.get_all_results()
+        display_frame = frame.copy()
         display_frame = draw_multiple_detections(display_frame, all_results)
         
-        # Ghi frame vào video
         if video_processor.video_writer is not None:
             video_processor.video_writer.write(display_frame)
         
         video_processor.frame_count += 1
         
-        # Hiển thị progress
         if video_processor.frame_count % 30 == 0:
             progress = (video_processor.frame_count / total_frames * 100) if total_frames > 0 else 0
             print(f"Đã xử lý {video_processor.frame_count}/{total_frames} frames ({progress:.1f}%)")
     
-    # Đóng video writer
     if video_processor.video_writer is not None:
         video_processor.video_writer.release()
         video_processor.video_writer = None
@@ -160,25 +122,17 @@ def process_video_ui(video_path, save_video=False):
     print(info_text)
     return output_path, info_text
 
-# Xử lý frame từ webcam cho live camera
+
 def process_camera_frame(frame):
     if frame is None:
         return None
     
-    # Chuyển từ RGB sang BGR cho OpenCV
     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    
-    # Xử lý prediction với tất cả models
     prediction_processor.predict_frame(frame_bgr)
     all_results = prediction_processor.get_all_results()
-    
-    # Vẽ detections từ tất cả models
     display_frame = draw_multiple_detections(frame_bgr.copy(), all_results)
-    
-    # Chuyển lại sang RGB cho Gradio và đảm bảo uint8
     result = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
     
-    # Đảm bảo là uint8
     if result.dtype != np.uint8:
         result = np.clip(result, 0, 255).astype(np.uint8)
     
@@ -186,7 +140,6 @@ def process_camera_frame(frame):
 
 
 def download_video():
-    """Trả về đường dẫn video để download"""
     global last_video_output
     if last_video_output and os.path.exists(last_video_output):
         return last_video_output

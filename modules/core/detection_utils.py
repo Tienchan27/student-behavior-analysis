@@ -1,8 +1,3 @@
-"""
-Module xử lý detection và vẽ kết quả
-Hỗ trợ nhiều models song song
-"""
-
 import cv2
 import threading
 import queue
@@ -12,11 +7,10 @@ from modules.core.config import CLASS_COLOR_MAP, CONF_THRESHOLD, MODEL_IMG_SIZE,
 
 
 def calculate_iou(box1: np.ndarray, box2: np.ndarray) -> float:
-    """Tính IoU (Intersection over Union) giữa 2 boxes"""
+    """Tính IoU giữa 2 bounding boxes"""
     x1_min, y1_min, x1_max, y1_max = box1
     x2_min, y2_min, x2_max, y2_max = box2
     
-    # Tính diện tích intersection
     inter_x_min = max(x1_min, x2_min)
     inter_y_min = max(y1_min, y2_min)
     inter_x_max = min(x1_max, x2_max)
@@ -26,8 +20,6 @@ def calculate_iou(box1: np.ndarray, box2: np.ndarray) -> float:
         return 0.0
     
     inter_area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
-    
-    # Tính diện tích union
     box1_area = (x1_max - x1_min) * (y1_max - y1_min)
     box2_area = (x2_max - x2_min) * (y2_max - y2_min)
     union_area = box1_area + box2_area - inter_area
@@ -37,21 +29,19 @@ def calculate_iou(box1: np.ndarray, box2: np.ndarray) -> float:
     
     return inter_area / union_area
 
-# Áp dụng NMS giữa các models để loại bỏ các nhận diện bị trùng lặp
+
 def apply_nms_cross_models(all_detections: List[Tuple]) -> List[Tuple]:
+    """Áp dụng NMS để loại bỏ detections trùng lặp"""
     if not all_detections:
         return []
     
-    # Sort giảm dần theo confidence 
     all_detections.sort(key=lambda x: x[2], reverse=True)
     
-    # Áp dụng NMS
     keep = []
     while all_detections:
         current = all_detections.pop(0)
         keep.append(current)
         
-        # Loại bỏ các detections overlap với current
         remaining = []
         for det in all_detections:
             iou = calculate_iou(current[0], det[0])
@@ -61,23 +51,20 @@ def apply_nms_cross_models(all_detections: List[Tuple]) -> List[Tuple]:
     
     return keep
 
-# Vẽ bounding boxes và labels lên frame từ list detections đã được xử lý
+
 def draw_detections(frame, detections: List[Tuple]):
+    """Vẽ bounding boxes và labels lên frame"""
     for box, label, confidence in detections:
         x1, y1, x2, y2 = map(int, box)
-        
         color = CLASS_COLOR_MAP.get(label.lower(), (255, 255, 255))
         
-        # Vẽ bounding box
         cv2.rectangle(frame, (x1, y1), (x2, y2), color=color, thickness=2, lineType=cv2.LINE_AA)
         
-        # Vẽ label với background
         label_text = f"{label} {confidence:.2f}"
         (text_width, text_height), _ = cv2.getTextSize(
             label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
         )
         
-        # Background cho text
         cv2.rectangle(
             frame,
             (x1, y1 - text_height - 5),
@@ -86,7 +73,6 @@ def draw_detections(frame, detections: List[Tuple]):
             -1
         )
         
-        # Text
         cv2.putText(
             frame,
             label_text,
@@ -100,18 +86,17 @@ def draw_detections(frame, detections: List[Tuple]):
     
     return frame
 
-# Merge và filter kết quả từ nhiều models, áp dụng NMS để loại bỏ duplicates
+
 def merge_and_filter_results(all_results: List) -> List[Tuple]:
+    """Merge kết quả từ nhiều models và áp dụng NMS"""
     if not all_results:
         return []
     
-    # Lọc bỏ các None và các kết quả không có boxes
     valid_results = [r for r in all_results if r is not None and r.boxes is not None and len(r.boxes) > 0]
     
     if not valid_results:
         return []
     
-    # Collect tất cả detections từ tất cả models
     all_detections = []
     for result in valid_results:
         boxes = result.boxes.xyxy.cpu().numpy()
@@ -124,22 +109,18 @@ def merge_and_filter_results(all_results: List) -> List[Tuple]:
             confidence = float(confidences[i])
             label = result.names[cls]
             
-            # Chỉ thêm nếu confidence đủ cao
             if confidence >= CONF_THRESHOLD:
                 all_detections.append((box, label, confidence))
     
-    # Loại bỏ duplicates
     filtered_detections = apply_nms_cross_models(all_detections)
-    # Giới hạn số lượng detections
     if len(filtered_detections) > MAX_DETECTIONS:
         filtered_detections = filtered_detections[:MAX_DETECTIONS]
     
     return filtered_detections
 
 
-# Vẽ detections lên frame sau khi merge và filter
 def draw_multiple_detections(frame, all_results: List):
-    # Merge và filter tất cả detections
+    """Vẽ detections từ nhiều models lên frame"""
     filtered_detections = merge_and_filter_results(all_results)
     
     if not filtered_detections:
@@ -147,8 +128,8 @@ def draw_multiple_detections(frame, all_results: List):
     return draw_detections(frame, filtered_detections)
 
 
-# Class để xử lý prediction với threading (cho 1 model)
 class PredictionProcessor:
+    """Xử lý prediction cho một model với threading"""
     
     def __init__(self, model):
         self.model = model
@@ -159,19 +140,17 @@ class PredictionProcessor:
         self.pred_thread = None
         
         if USE_THREADING:
-            self.pred_queue = queue.Queue(maxsize=2)
+            self.pred_queue = queue.Queue(maxsize=5)
             self.pred_thread = threading.Thread(target=self._prediction_thread, daemon=True)
             self.pred_thread.start()
             print("Đã khởi động prediction thread")
     
     def _prediction_thread(self):
-        """Thread riêng để xử lý prediction, không block việc đọc frame"""
+        """Thread xử lý prediction"""
         while self.running:
             try:
-                # Lấy frame từ queue (timeout ngắn hơn để phản hồi nhanh)
                 frame = self.pred_queue.get(timeout=0.05)
                 
-                # Dự đoán với model (tối ưu để nhanh hơn và chính xác hơn)
                 outputs = self.model.predict(
                     source=frame,
                     verbose=False,
@@ -184,7 +163,6 @@ class PredictionProcessor:
                     agnostic_nms=False
                 )
                 
-                # Lưu kết quả
                 with self.results_lock:
                     self.latest_results = outputs[0]
                     
@@ -194,16 +172,32 @@ class PredictionProcessor:
                 print(f"Lỗi trong prediction thread: {e}")
                 continue
     
-    def predict_frame(self, frame):
-        """Thêm frame vào queue để xử lý (threading) hoặc xử lý trực tiếp"""
+    def predict_frame(self, frame, wait=False):
+        """Thêm frame vào queue để xử lý
+        
+        Args:
+            frame: Frame cần xử lý
+            wait: Nếu True, đợi queue xử lý xong frame trước đó (timeout ngắn)
+        """
         if USE_THREADING:
-            # Thêm frame vào queue để xử lý (bỏ qua nếu queue đầy)
+            if wait:
+                import time
+                timeout = 0.1
+                start_time = time.time()
+                while not self.pred_queue.empty() and (time.time() - start_time) < timeout:
+                    time.sleep(0.01)
             try:
                 self.pred_queue.put_nowait(frame)
             except queue.Full:
-                pass  # Bỏ qua frame này nếu queue đầy
+                if wait:
+                    try:
+                        self.pred_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    self.pred_queue.put_nowait(frame)
+                else:
+                    pass
         else:
-            # Xử lý trực tiếp (chậm hơn)
             outputs = self.model.predict(
                 source=frame,
                 verbose=False,
@@ -227,32 +221,32 @@ class PredictionProcessor:
         self.running = False
 
 
-# Class để xử lý prediction với nhiều models song song
 class MultiModelProcessor:
+    """Xử lý prediction với nhiều models song song"""
+    
     def __init__(self, models: Dict):
         self.models = {name: model for name, model in models.items() if model is not None}
         self.processors = {}
         
-        # Tạo PredictionProcessor cho mỗi model
         for name, model in self.models.items():
             self.processors[name] = PredictionProcessor(model)
         
         print(f"Đã khởi tạo MultiModelProcessor với {len(self.processors)} models")
     
-    # Thêm frame vào queue của tất cả processors
-    def predict_frame(self, frame):
+    def predict_frame(self, frame, wait=False):
+        """Thêm frame vào queue của tất cả processors"""
         for processor in self.processors.values():
-            processor.predict_frame(frame)
+            processor.predict_frame(frame, wait=wait)
     
-    # Lấy kết quả từ tất cả processors
     def get_all_results(self) -> List:
+        """Lấy kết quả từ tất cả processors"""
         results = []
         for processor in self.processors.values():
             result = processor.get_latest_results()
             results.append(result)
         return results
 
-    # Dừng tất cả prediction threads
     def stop(self):
+        """Dừng tất cả prediction threads"""
         for processor in self.processors.values():
             processor.stop()

@@ -62,8 +62,8 @@ Hệ thống sử dụng 3 models YOLO chạy song song để phát hiện các 
 
 Models được tự động load từ:
 - `modules/models/student_behavior/hand-raise_read_write_model/weights/best.pt`
-- `modules/models/student_behavior/talk_model/runs/detect/train/weights/best.pt`
-- `modules/models/student_behavior/stand_model/runs/detect/train/weights/best.pt`
+- `modules/models/student_behavior/talk_model/weights/best.pt`
+- `modules/models/student_behavior/stand_model/weights/best.pt`
 
 ## Cấu hình
 
