@@ -211,7 +211,7 @@ with gr.Blocks(title="Student Behavior Detector", theme=gr.themes.Soft()) as dem
                 inputs=image_input,
                 outputs=[image_output, image_info]
             )
-        
+        ####
         # Tab 2: Video Inference
         with gr.Tab("Video Inference"):
             gr.Markdown("### Upload video để phát hiện hành vi học sinh")
